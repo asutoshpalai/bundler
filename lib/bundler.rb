@@ -11,7 +11,6 @@ require "bundler/version"
 require "bundler/constants"
 require "bundler/current_ruby"
 require "bundler/errors"
-require "bundler/plugin"
 
 module Bundler
   environment_preserver = EnvironmentPreserver.new(ENV, %w(PATH GEM_PATH))
@@ -54,6 +53,7 @@ module Bundler
   autoload :RubyGemsGemInstaller,   "bundler/rubygems_gem_installer"
   autoload :UI,                     "bundler/ui"
   autoload :URICredentialsFilter,   "bundler/uri_credentials_filter"
+  autoload :Plugin,                 "bundler/plugin"
 
   class << self
     attr_writer :bundle_path
@@ -451,6 +451,4 @@ module Bundler
       ENV.replace(backup)
     end
   end
-
-  Plugin.init
 end
