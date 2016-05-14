@@ -1,4 +1,5 @@
 # frozen_string_literal: true
+
 require "spec_helper"
 require "bundler/cli"
 
@@ -11,6 +12,35 @@ describe "bundle executable" do
   it "returns non-zero exit status when passed unrecognized task" do
     bundle "unrecognized-task"
     expect(exitstatus).to_not be_zero if exitstatus
+  end
+
+  it "accept the signals" do
+    gemfile "gem 'rack'"
+    system_gems "rack-1.0.0"
+
+    create_file "hi", <<-RUBY
+      #!/usr/bin/env ruby
+
+      begin
+        Thread.new do
+          puts 'Started'                  # For process sync
+          STDOUT.flush
+          sleep 1
+          raise "No Interrupt received"   # So that the test fails
+        end.join
+      rescue Interrupt
+      end
+      puts "foo"
+    RUBY
+
+    bundled_app.join("hi").chmod(0755)
+
+    bundle("exec ./hi") do |i, o, thr|
+      o.gets                      # Consumes 'Started' and ensures that thread has started
+      Process.kill('INT', thr.pid)
+    end
+
+    expect(out).to eq('foo')
   end
 
   it "looks for a binary and executes it if it's named bundler-<task>" do
