@@ -12,6 +12,16 @@ describe "bundle plugin" do
 
       expect(out).to include("Installed plugin foo")
     end
+
+    it "installs a plugin from rubygems", :focused do
+      build_gem "bundler-foo" do |s|
+        s.write "plugin.rb"
+      end
+
+      bundle "plugin install rack --source \"file://#{gem_repo1}\""
+
+      expect(out).to include("Installed plugin bundler-foo")
+    end
   end
 
   describe "malformatted plugin" do
