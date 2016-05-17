@@ -9,16 +9,20 @@ module Bundler
     @sources = {}              # The map of loaded sources
 
     class << self
-      # Installs a plugin and registers it with the index
-      def install(name, git_path)
-        git_proxy = Source::Git::GitProxy.new(plugin_cache.join(name), git_path, "master")
-        git_proxy.checkout
 
-        plugin_path = plugin_root.join(name)
-        git_proxy.copy_to(plugin_path)
+      # Installs a plugin and registers it with the index
+      def install(name, options)
+
+        if options[:git]
+          plugin_path = install_git name, options
+        else
+          plugin_path = install_rubygems name, options, plugin_path
+        end
+
+        plugin_path = Pathname.new plugin_path
 
         unless File.file? plugin_path.join("plugin.rb")
-          raise "plugin.rb is not present in the repo"
+          raise "plugin.rb is not present in the gem"
         end
 
         register_plugin name, plugin_path
@@ -26,7 +30,83 @@ module Bundler
         Bundler.ui.info "Installed plugin #{name}"
       rescue StandardError => e
         Bundler.rm_rf(plugin_root.join(name))
-        Bundler.ui.info "Failed to installed plugin #{name}: #{e.message}"
+        Bundler.ui.error "Failed to installed plugin #{name}: #{e.message}"
+        Bundler.ui.error e.backtrace.join("\n  ")
+      end
+
+      def install_rubygems(name, options, plugin_path)
+        version = options[:version] || [">= 0"]
+        source = options[:source] || raise("You need to provide the rubygems source")
+
+        dep = Dependency.new(name, version, options)
+
+        rg_source = Source::Rubygems.new("remotes" => source, :ignore_app_cache => true)
+        rg_source.remote!
+        rg_source.dependency_names << dep.name
+        idx = rg_source.specs
+        deps = [DepProxy.new(dep, GemHelpers.generic_local_platform)]
+        specs = Resolver.resolve(deps, idx).materialize([dep])
+
+        raise "Plugin dependencies are not supported currently" if specs.size != 1
+        install_from_spec specs.first
+      end
+
+      def install_from_spec(spec)
+        raise "Gem spec doesn't have remote set" unless spec.remote
+        uri = spec.remote.uri
+        spec.fetch_platform
+
+        download_path = plugin_cache.join(spec.name).to_s
+
+        path = Bundler.rubygems.download_gem(spec, uri, download_path)
+
+        Bundler.rubygems.preserve_paths do
+          Bundler::RubyGemsGemInstaller.new(
+            path,
+            :install_dir         => plugin_root.to_s,
+            :ignore_dependencies => true,
+            :wrappers            => true,
+            :env_shebang         => true
+          ).install.full_gem_path
+        end
+      end
+
+      def install_git(name, options)
+        uri = options[:git]
+        git_scope = "#{git_base_name uri}-#{git_uri_hash uri}"
+
+        cache_path = plugin_cache.join("bundler", "git", git_scope)
+
+        git_proxy = Source::Git::GitProxy.new(cache_path, uri, "master")
+        git_proxy.checkout
+
+
+        git_scope = "#{git_base_name uri}-#{git_shortref_for_path(git_proxy.revision)}"
+        install_path = plugin_root.join("bundler", git_scope)
+
+        git_proxy.copy_to(install_path)
+
+        install_path
+      end
+
+      def git_base_name(uri)
+        File.basename(uri.sub(%r{^(\w+://)?([^/:]+:)?(//\w*/)?(\w*/)*}, ""), ".git")
+      end
+
+      def git_shortref_for_path(ref)
+        ref[0..11]
+      end
+
+      def git_uri_hash(uri)
+        if uri =~ %r{^\w+://(\w+@)?}
+          # Downcase the domain component of the URI
+          # and strip off a trailing slash, if one is present
+          input = URI.parse(uri).normalize.to_s.sub(%r{/$}, "")
+        else
+          # If there is no URI scheme, assume it is an ssh/git URI
+          input = uri
+        end
+        Digest::SHA1.hexdigest(input)
       end
 
       # Saves the current state
@@ -44,7 +124,7 @@ module Bundler
 
         require path.join("plugin.rb")
 
-        index.add_plugin name, @commands, @sources, @post_install_hooks
+        index.add_plugin name, path, @commands, @sources, @post_install_hooks
       ensure
         @commands = commands
         @post_install_hooks = post_install_hooks
@@ -52,8 +132,8 @@ module Bundler
       end
 
       # The ondemand loading of plugins
-      def load_plugin(name)
-        require plugin_root.join(name).join("plugin.rb")
+      def load_plugin(path)
+        require Pathname.new(path).join("plugin.rb")
       end
 
       def index
@@ -72,7 +152,7 @@ module Bundler
 
       # Cache to store the downloaded plugins
       def plugin_cache
-        Bundler.user_cache.join("plugins")
+        plugin_root.join("cache")
       end
 
       def add_command(command, command_class)

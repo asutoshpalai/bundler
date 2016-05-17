@@ -45,13 +45,13 @@ module Bundler
 
     # We keep track which command  or source belong to which plugin
     # and which all plugins declare a specific hook
-    def add_plugin(plugin, commands, sources, post_install_hooks)
+    def add_plugin(name, path, commands, sources, post_install_hooks)
       raise "Command already registed" unless (commands.keys & @commands.keys).empty?
       raise "Source already registed" unless (sources.keys & @sources.keys).empty?
 
-      commands.keys.each {|cmd| @commands[cmd] = plugin }
-      sources.keys.each {|source| @sources[source] = plugin }
-      @post_install_hooks << plugin
+      commands.keys.each {|cmd| @commands[cmd] = path }
+      sources.keys.each {|source| @sources[source] = path }
+      @post_install_hooks << path
       save_config
     end
 

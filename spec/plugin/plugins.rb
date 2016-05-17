@@ -13,12 +13,14 @@ describe "bundle plugin" do
       expect(out).to include("Installed plugin foo")
     end
 
-    it "installs a plugin from rubygems", :focused do
-      build_gem "bundler-foo" do |s|
-        s.write "plugin.rb"
+    it "installs a plugin from rubygems source" do
+      build_repo2 do
+        build_gem "bundler-foo" do |s|
+          s.write "plugin.rb"
+        end
       end
 
-      bundle "plugin install rack --source \"file://#{gem_repo1}\""
+      bundle "plugin install bundler-foo --source \"file://#{gem_repo2}\""
 
       expect(out).to include("Installed plugin bundler-foo")
     end
