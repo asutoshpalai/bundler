@@ -36,18 +36,19 @@ module Bundler
 
       def install_rubygems(name, options, plugin_path)
         version = options[:version] || [">= 0"]
-        source = options[:source] || raise("You need to provide the rubygems source")
+
+        source = options.delete(:source) || raise("You need to provide the rubygems source")
+        rg_source = Source::Rubygems.new("remotes" => source, :ignore_app_cache => true)
+        rg_source.remote!
+        rg_source.dependency_names << name
 
         dep = Dependency.new(name, version, options)
 
-        rg_source = Source::Rubygems.new("remotes" => source, :ignore_app_cache => true)
-        rg_source.remote!
-        rg_source.dependency_names << dep.name
-        idx = rg_source.specs
         deps = [DepProxy.new(dep, GemHelpers.generic_local_platform)]
+        idx = rg_source.specs
         specs = Resolver.resolve(deps, idx).materialize([dep])
 
-        raise "Plugin dependencies are not supported currently" if specs.size != 1
+        raise "Plugin dependencies are not currently supported." if specs.size != 1
         install_from_spec specs.first
       end
 
