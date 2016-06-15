@@ -30,8 +30,7 @@ module Bundler
     SECTIONS_BY_VERSION_INTRODUCED = {
       Gem::Version.create("1.0") => [DEPENDENCIES, PLATFORMS, GIT, GEM, PATH].freeze,
       Gem::Version.create("1.10") => [BUNDLED].freeze,
-      Gem::Version.create("1.12") => [RUBY].freeze,
-      Gem::Version.create("1.13") => [PLUGIN].freeze,
+      Gem::Version.create("1.12") => [RUBY, PLUGIN].freeze,
     }.freeze
 
     KNOWN_SECTIONS = SECTIONS_BY_VERSION_INTRODUCED.values.flatten.freeze
