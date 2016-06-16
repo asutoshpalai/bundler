@@ -16,6 +16,7 @@ module Bundler
       def initialize
         @plugin_paths = {}
         @commands = {}
+        @sources = {}
 
         load_index
       end
@@ -26,13 +27,16 @@ module Bundler
       # @param [String] name of the plugin to be registered
       # @param [String] path where the plugin is installed
       # @param [Array<String>] commands that are handled by the plugin
-      def register_plugin(name, path, commands)
-        @plugin_paths[name] = path
-
+      def register_plugin(name, path, commands, sources)
         common = commands & @commands.keys
         raise CommandConflict.new(name, common) unless common.empty?
         commands.each {|c| @commands[c] = name }
 
+        com = sources & @sources.keys
+        raise "Source(s) #{com.join(", ")} are already registered" if com.any?
+        sources.each {|k| @sources[k] = name }
+
+        @plugin_paths[name] = path
         save_index
       end
 
@@ -54,6 +58,14 @@ module Bundler
         @plugin_paths[name]
       end
 
+      def source?(source)
+        @sources.key? source
+      end
+
+      def source_plugin(name)
+        @sources[name]
+      end
+
     private
 
       # Reads the index file from the directory and initializes the instance variables.
@@ -66,6 +78,7 @@ module Bundler
           index = YAMLSerializer.load(data)
           @plugin_paths = index["plugin_paths"] || {}
           @commands = index["commands"] || {}
+          @sources = index["sources"] || {}
         end
       end
 
@@ -75,6 +88,7 @@ module Bundler
         index = {
           "plugin_paths" => @plugin_paths,
           "commands" => @commands,
+          "sources" => @sources,
         }
 
         require "bundler/yaml_serializer"

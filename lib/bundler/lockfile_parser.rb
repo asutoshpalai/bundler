@@ -22,14 +22,15 @@ module Bundler
     GIT          = "GIT".freeze
     GEM          = "GEM".freeze
     PATH         = "PATH".freeze
+    PLUGIN       = "PLUGIN".freeze
     SPECS        = "  specs:".freeze
     OPTIONS      = /^  ([a-z]+): (.*)$/i
-    SOURCE       = [GIT, GEM, PATH].freeze
+    SOURCE       = [GIT, GEM, PATH, PLUGIN].freeze
 
     SECTIONS_BY_VERSION_INTRODUCED = {
       Gem::Version.create("1.0") => [DEPENDENCIES, PLATFORMS, GIT, GEM, PATH].freeze,
       Gem::Version.create("1.10") => [BUNDLED].freeze,
-      Gem::Version.create("1.12") => [RUBY].freeze,
+      Gem::Version.create("1.12") => [RUBY, PLUGIN].freeze,
     }.freeze
 
     KNOWN_SECTIONS = SECTIONS_BY_VERSION_INTRODUCED.values.flatten.freeze
@@ -116,14 +117,15 @@ module Bundler
   private
 
     TYPES = {
-      GIT  => Bundler::Source::Git,
-      GEM  => Bundler::Source::Rubygems,
-      PATH => Bundler::Source::Path,
+      GIT    => Bundler::Source::Git,
+      GEM    => Bundler::Source::Rubygems,
+      PATH   => Bundler::Source::Path,
+      PLUGIN => Bundler::Plugin,
     }.freeze
 
     def parse_source(line)
       case line
-      when GIT, GEM, PATH
+      when GIT, GEM, PATH, PLUGIN
         @current_source = nil
         @opts = {}
         @type = line
@@ -145,6 +147,9 @@ module Bundler
             @rubygems_aggregate.add_remote(url)
           end
           @current_source = @rubygems_aggregate
+        when PLUGIN
+          @current_source = Plugin.source_from_lock(@opts)
+          @sources << @current_source
         end
       when OPTIONS
         value = $2

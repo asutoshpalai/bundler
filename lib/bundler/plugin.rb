@@ -10,12 +10,14 @@ module Bundler
 
     class MalformattedPlugin < PluginError; end
     class UndefinedCommandError < PluginError; end
+    class UnknownSourceError < PluginError; end
 
     PLUGIN_FILE_NAME = "plugins.rb".freeze
 
   module_function
 
     @commands = {}
+    @sources = {}
 
     # Installs a new plugin by the given name
     #
@@ -29,7 +31,7 @@ module Bundler
       save_plugins paths
     rescue PluginError => e
       paths.values.map {|path| Bundler.rm_rf(path) } if paths
-      Bundler.ui.error "Failed to install plugin #{name}: #{e.message}\n  #{e.backtrace.join("\n  ")}"
+      Bundler.ui.error "Failed to install plugin #{name}: #{e.message}\n  #{e.backtrace[0]}"
     end
 
     # Evaluates the Gemfile with a limited DSL and installs the plugins
@@ -44,7 +46,7 @@ module Bundler
       else
         definition = DSL.evaluate(gemfile, nil, {})
       end
-      return unless definition.dependencies.any?
+      return if definition.dependencies.empty?
 
       plugins = Installer.new.install_definition(definition)
 
@@ -71,7 +73,7 @@ module Bundler
       @commands[command] = cls
     end
 
-    # Checks if any plugins handles the command
+    # Checks if any plugin handles the command
     def command?(command)
       !index.command_plugin(command).nil?
     end
@@ -79,11 +81,39 @@ module Bundler
     # To be called from Cli class to pass the command and argument to
     # approriate plugin class
     def exec_command(command, args)
-      raise UndefinedCommandError, "Command #{command} not found" unless command? command
+      raise UndefinedCommandError, "Command `#{command}` not found" unless command? command
 
       load_plugin index.command_plugin(command) unless @commands.key? command
 
       @commands[command].new.exec(command, args)
+    end
+
+    # To be called via the API to register to handle a source plugin
+    def add_source(source, cls)
+      @sources[source] = cls
+    end
+
+    # Checks if any plugin declares the source
+    def source?(name)
+      !index.source_plugin(name).nil?
+    end
+
+    # @return [Class] that handles the source. The calss includes API::Source
+    def source(name)
+      raise UnknownSourceError, "Source #{name} not found" unless source? name
+
+      load_plugin index.source_plugin name unless @sources.key? name
+
+      @sources[name]
+    end
+
+    # @param [Hash] The options that are present in the lock file
+    # @return [API::Source] the instance of the class that handles the source
+    #                       type passed in locked_opts
+    def source_from_lock(locked_opts)
+      src = source(locked_opts["type"])
+
+      src.new(locked_opts.merge("uri" => locked_opts["remote"]))
     end
 
     # currently only intended for specs
@@ -113,7 +143,7 @@ module Bundler
     # @raise [Error] if plugins.rb file is not found
     def validate_plugin!(plugin_path)
       plugin_file = plugin_path.join(PLUGIN_FILE_NAME)
-      raise MalformattedPlugin, "#{PLUGIN_FILE_NAME} was not found in the plugin!" unless plugin_file.file?
+      raise MalformattedPlugin, "#{PLUGIN_FILE_NAME} was not found in the plugin." unless plugin_file.file?
     end
 
     # Runs the plugins.rb file in an isolated namespace, records the plugin
@@ -123,8 +153,10 @@ module Bundler
     # @param [Pathname] path the path where the plugin is installed at
     def register_plugin(name, path)
       commands = @commands
+      sources = @sources
 
       @commands = {}
+      @sources = {}
 
       begin
         load path.join(PLUGIN_FILE_NAME), true
@@ -132,9 +164,10 @@ module Bundler
         raise MalformattedPlugin, "#{e.class}: #{e.message}"
       end
 
-      index.register_plugin name, path.to_s, @commands.keys
+      index.register_plugin name, path.to_s, @commands.keys, @sources.keys
     ensure
       @commands = commands
+      @sources = sources
     end
 
     # Executes the plugins.rb file
