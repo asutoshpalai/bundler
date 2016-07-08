@@ -1,0 +1,143 @@
+Plugins -- A way to extend bundler
+==================================
+
+## SYNOPSIS
+
+Bundler plugins allow to add custom commands and gem installation sources.
+
+## PLUGIN TYPES
+
+Two types of plugins are supported as of now.
+
+  * Command plugins
+  * Source plugins
+
+### COMMAND PLUGINS
+
+Command Plugins provide subcommands that can be executed through bundler.
+
+There are two ways to declare command plugins.
+
+First, via an executable named `bundler-*` in path.
+
+Second, via plugin declaring the command as described in [PLUGIN DECLARATION][].
+
+### SOURCE PLUGINS
+
+Source plugins provide custom source that can be used to install the gems from.
+
+## PLUGIN GEM
+
+To be used as Bundler plugin, the gem should have `plugins.rb` in the root of 
+the gem. This file is read during the loading of plugin to determine the 
+services provided by it.
+
+## INSTALLATION
+
+Plugins can be installed via `bundle` cli or through Gemfile(5). Plugins can either
+be from Rubygems source or from git sources.
+
+### CLI
+
+`bundle` provides `plugin` command that can be used to install the plugins. A
+rubygems source be explicitly provided, but it defaults to `gem sources`.
+
+    bundle plugin install foo
+    bundle plugin install foo --source https://my-rg-source.com/
+
+    bundle plugin install git-plugin --git "https://git/url.git"
+    bundle plugin install git-plugin --git "https://git/url.git" --ref v1.2
+
+## COMMAND PLUGINS
+
+The class that shall handle the command is declared as mentioned in 
+[DECLARATION].
+
+If a plugin has declared an command `foo` and `bundle foo` is executed, the
+class that declared the command (or the class declared with the command as in 
+second example) is instantiated and `exec` method is called with two parameters.
+
+The first parameter is the command that the class is called for and the second
+is an array containing the arguments, if any, passed.
+
+## SOURCE PLUGINS
+
+Plugins sources are used through `source` blocks with `type` option in 
+Gemfile(5). The options provided with the `source` block are passed to source
+plugin to resolve the appropriate repo tag/branch.
+
+    source "uri://to/gem/repo", :type => "mercurial" do
+      gem "new-gem"
+    end
+
+The above block tries to resolve `new-gem` from the mercurial repo provided by
+the uri.
+### GEMFILE
+
+Plugins listed in Gemfile(5) are evaluated and installed before evaluating it
+for gems.
+
+To specify a plugin to be installed, you need to add `plugin` lines to your
+Gemfile(5). They accept all the options available for `gem`.
+
+    plugin "my-plugin"
+
+Source plugins, apart from being available to installed through `plugin` lines,
+are automatically inferred from `source` blocks with `:type` options. If a
+source block with `:type => foo` is available, a plugin named 
+`bundler-source-foo` is added to the plugins install list.
+
+    source "uri://to/gem", :type => `svn` do
+      gem "my-gem"
+    end
+
+## PLUGINS.RB
+
+This file is loaded during the installation and also when the service it has
+declared is required. The plugin _must_ declare the actions it can perform in
+this file _only_ through [PLUGIN API][].
+
+## API
+
+For plugins to interact with bundler and also use the required helper functions,
+the should use `Bundler::Plugin::API`.
+
+To use the API class, it can either be inherited or can be __instantiated__ 
+separately (if it can't be inherited due to any design problem).
+
+## DECLARATION
+
+The actions that can be performed by the plugins are to be declared in 
+[PLUGINS.RB][] file using class methods of [PLUGIN API][]. All the declarations
+register a class that will be initialised to handle the action.
+
+### COMMAND PLUGIN
+
+The command plugins are declared through `command` class method of [API] class.
+
+If API is inherited:
+
+    class NewCommand < Bundler::Plugin::API
+      command "new-command"
+      ...
+    end
+
+Otherwise:
+
+    Bundler::Plugin::API.command "new-command", NewCommandClass
+
+### SOURCE plugins
+
+The command plugins are declared through `source` class method of [API] class.
+
+If API is inherited:
+
+    class Subversion < Bundler::Plugin::API
+      source "svn"
+      ...
+    end
+
+Otherwise:
+
+    Bundler::Plugin::API.source "svn", SubversionSourceClass
+

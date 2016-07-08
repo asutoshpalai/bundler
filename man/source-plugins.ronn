@@ -1,0 +1,194 @@
+Source Plugins -- Adding custom sources to install gems from
+============================================================
+
+## SYNOPSIS
+
+Source plugins allow to add custom sources to install gems from apart from the 
+Rubygems sources and Git sources that come with bundler.
+
+This guide is api and interfaced to be provided by the source plugins to be
+successfully integrated with bundler. For installation and usage, refer to the 
+page for plugins. Developers should also read the sections PLUGINS.RB and 
+DECLARATION in plugins' page.
+
+## INVOCATION
+
+During the declaration with `Bundler::Plugin::API.source`, the
+`Bundler::Plugin::API::Source` module is included in the class passed. This
+class contains the default implementations of many important methods and also
+some helper functions that are required for a class to act as source. The
+description of methods and what should or should not be overridden is provided
+below.
+
+There are two situations where the instance of the source class get initialized
+
+### FROM GEMFILE EVAL
+
+When a source block with `type` is encountered, the class registered via the
+`Bundler::Plugin::API` is initiated with the options provided with the source
+plugin, including the uri provided to source block under the key `uri`.
+
+### FROM LOCKFILE EVAL
+
+If a gem being provided by the source is resolved, it is entered into the
+lockfile (along with the options source provides through `options to lock`
+method).  
+When the lockfile is parsed source object is initialized from the options
+present in the lockfile.
+
+## APP_CACHE
+
+These are used to cache a copy of the source from which the source plugin
+is able to obtain gemspec files and install the gems. This is different from
+internal caching that can be done by the plugin. This cache _may_ be propagated
+across different machines.
+
+The source plugin is expected to save a copy of the remote source at path
+provided by `app_cache_path` when `cache` is called on the source object.
+
+The plugin should access the cache stored at `app_cache_path` _only if_
+`cached!` method is called on the source object.
+
+## METHODS
+
+There are description of methods that are required to build a source plugin.
+
+### INITIALIZE
+
+Options along with the uri provided with the source block are passed during
+initialization. 
+ 
+If this method is overridden, you _must_ call the parent initializer with
+options passed.
+
+### FETCH_GEMSPEC_FILES
+
+This should return an Array of Strings representing the paths of `gemspec` files
+for the gems that can be resolved by the source (using the uri).
+
+This should detect wether the gems being resolved by it has been installed or
+not.  
+Accordingly, if the gem is installed and [UNLOCK][] has not been called for the
+source instance, the path of the gemfile should be the one in the installation 
+directory. It is used to build the full_gem_path.  
+If not installed or [UNLOCK][] has been called, then the path(s) should be of any
+valid `gemfile` representing the gem(s) that the source can install.
+
+This is used internally by the [SPEC][] method to generate the Index of 
+Specifications for the gems that can be resolved by the source plugin.
+
+If the source class overrides the default [SPEC][] method, this function is no
+longer needed.
+
+### INSTALL
+
+It accepts two parameters, first a spec for the gem to be installed and the 
+other a hash containing options.
+
+It should install the gem pointed by the spec at appropriate location (a default
+location is provided by [INSTALL_PATH][] for single gem).
+
+### POST_INSTALL
+
+It accepts a spec object and option parameter for whether to build extensions.
+This _must_ be called with the spec after install in [INSTALL][]. Before calling
+this, `spec.loaded_from` should be set to the gemspec file in the installation
+directory.
+
+This does post gem installation tasks like building up extensions, generating
+bin files and installing them for the spec provided.
+
+Note: This function need not be overridden. It is only to be called after
+install.
+
+### UNLOCK!
+
+When this function is called, the source shall update the internal references
+saved in the lockfile that are used to pin down the gem to a specific revision
+(e.g. a specific commit) still meeting the constraints available from Gemfile,
+so that next time spec/install is called, it shall used the latest revision.
+
+### REMOTE!
+
+Only after this function has been called, the source should use the remote
+pointed by uri to fetch the code from.  
+Otherwise, it _must_ throw error if forced to do so (e.g. when the gem is not
+installed as well as [CACHED!][] is not called and [FETCH_GEMSPEC_FILES][]
+is called).
+
+### CACHED!
+
+Only after this function has been called, the source should use [APP_CACHE][] as
+a source to fetch the code from.
+Otherwise, it _must_ throw error if forced to do so (e.g. when the gem is not
+installed as well as [REMOTE!][] is not called and [FETCH_GEMSPEC_FILES][]
+is called).
+
+### APP_CACHE_DIRNAME
+
+This is the name of the directory where the source plugin is expected to cache
+the installation source in the [APP_CACHE][] when [CACHE][] is called.
+
+This is used to build the [APP_CACHE_PATH][] and also while pruning the
+[APP_CACHE][]. This need not be used internally.
+
+### APP_CACHE_PATH
+
+The path where source plugin is expected to cache the installation source when [CACHE][] is called.
+
+The source should not store anything outside this path since the rest is pruned.
+
+### CACHE
+
+When this is called, the source shall make a copy of the source of installation
+form which it shall be able to checkout the locked version when without using
+remote when [CACHED!][] is called.
+
+### SPECS
+
+This is expected to return an `Bundler::Index` object containing
+`Gem::Specification` for all the gems it can satisfy.
+
+A default implementation is provided which uses [FETCH_GEMSPEC_FILES][] to
+construct the Index. So, as long as [FETCH_GEMSPEC_FILES][] is implemented
+correctly, this default implementation can be relied upon to work.
+
+### OPTIONS TO LOCK
+
+This should return a Hash containing the options to be entered into the
+lockfile. These options shall be sufficient to checkout the same code (e.g. same
+revision for git) when the source is initialized with these options.
+
+Do not include uri and type, they are merged with these by default.
+
+### INSTALL_PATH
+
+This provides a reasonable default path for installing a single gem. If the
+source can install more than one gem this is not of any use.
+
+This is for internal use only and may not be used if required otherwise.
+
+This is used by default implementations of [CACHE][] and [INSTALLED?][]. If this
+is not valid, you should override [CACHE][].
+
+### == and EQL?
+
+They should check weather two sources object represent the same source. These
+function should compare only on the attributes derived from options passed from
+Gemfile and not on any attribute that is used to pin down specific revision. A
+rule of thumb is source objects constructed from Gemfile and the ones from the
+lockfile should match, but a source object representing different sources in
+Gemfile should not match.
+
+These functions are used to converge source from Gemfile and lockfile and also
+to check uniqueness of source in source lists.
+
+### HASH
+
+This should behave same as [==][] and [EQL?][], i.e. two object same by EQL?
+should have same hash.
+
+### INSTALLED?
+
+This is a helper function that just checks whether [INSTALL_PATH][] points to a
+valid directory. Not necessary if not used internally.
